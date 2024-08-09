@@ -2,9 +2,27 @@ from fastapi import FastAPI
 import uvicorn
 from ray.job_submission import JobSubmissionClient
 import time
+from opentelemetry import trace
+from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
+from opentelemetry.exporter.jaeger.thrift import JaegerExporter
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import BatchSpanProcessor
 
 # Initialize FastAPI
 app = FastAPI()
+
+# Initialize Jaeger exporter
+jaeger_exporter = JaegerExporter(
+    agent_host_name="localhost",
+    agent_port=6831,
+)
+
+# Set up the tracer provider and span processor
+trace.set_tracer_provider(TracerProvider())
+trace.get_tracer_provider().add_span_processor(BatchSpanProcessor(jaeger_exporter))
+
+# Instrument FastAPI app
+FastAPIInstrumentor.instrument_app(app)
 
 # Initialize the JobSubmissionClient with the address of your Ray cluster
 client = JobSubmissionClient(
@@ -15,27 +33,19 @@ client = JobSubmissionClient(
 def submit_ray_job(action: str):
     job_id = f"ray-job-{time.time()}"  # Unique job ID
     job_cmd = f"python ray_worker.py --id {job_id} --action {action}"
-
     submission_id = client.submit_job(entrypoint=job_cmd)
-
     return submission_id
 
 
 @app.post("/increment")
 async def increment_counter():
-    # Submit the Ray job for incrementing the counter
     submission_id = submit_ray_job("increment")
-
-    # Return immediately without waiting for the job to finish
     return {"message": f"Job {submission_id} for incrementing counter started"}
 
 
 @app.get("/value")
 async def get_counter_value():
-    # Submit the Ray job for getting the counter value
     submission_id = submit_ray_job("value")
-
-    # Return immediately without waiting for the job to finish
     return {"message": f"Job {submission_id} for getting counter value started"}
 
 
