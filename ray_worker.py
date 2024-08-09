@@ -1,6 +1,22 @@
 import ray
 import argparse
-import time  # Import time module for adding delay
+import time
+from opentelemetry import trace
+from opentelemetry.exporter.jaeger.thrift import JaegerExporter
+from opentelemetry.sdk.resources import Resource
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import BatchSpanProcessor
+
+# Initialize Jaeger exporter
+jaeger_exporter = JaegerExporter(
+    agent_host_name="localhost",
+    agent_port=6831,
+)
+
+# Set up the tracer provider with a specific service name for Ray
+resource = Resource.create({"service.name": "ray-worker-service"})
+trace.set_tracer_provider(TracerProvider(resource=resource))
+trace.get_tracer_provider().add_span_processor(BatchSpanProcessor(jaeger_exporter))
 
 
 # Define the Actor class
@@ -10,12 +26,12 @@ class Counter:
         self.value = 0
 
     def increment(self):
-        time.sleep(7)  # Add a 7-second delay before incrementing the counter
+        time.sleep(7)  # Simulate a delay
         self.value += 1
         return self.value
 
     def get_value(self):
-        time.sleep(7)  # Add a 7-second delay before returning the value
+        time.sleep(7)  # Simulate a delay
         return self.value
 
 
@@ -27,12 +43,14 @@ def main(id, action):
     counter = Counter.remote()
 
     # Perform the action based on the command-line argument
-    if action == "increment":
-        result = ray.get(counter.increment.remote())
-        print(f"Counter incremented: {result}")
-    elif action == "value":
-        result = ray.get(counter.get_value.remote())
-        print(f"Counter value: {result}")
+    tracer = trace.get_tracer(__name__)
+    with tracer.start_as_current_span(f"ray-{action}-operation"):
+        if action == "increment":
+            result = ray.get(counter.increment.remote())
+            print(f"Counter incremented: {result}")
+        elif action == "value":
+            result = ray.get(counter.get_value.remote())
+            print(f"Counter value: {result}")
 
     # Shutdown Ray
     ray.shutdown()
