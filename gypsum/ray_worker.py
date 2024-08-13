@@ -1,6 +1,5 @@
 import ray
 import argparse
-import time
 from opentelemetry import trace
 
 
@@ -11,20 +10,13 @@ class Counter:
         self.value = 0
 
     def increment(self):
-        time.sleep(7)  # Simulate a delay
         self.value += 1
-        tracer = trace.get_tracer(__name__)
-        with tracer.start_as_current_span(f"ray-increment-operation"):
-            print(f"Counter incremented: {self.value}")
+        print(f"Counter incremented: {self.value}")
         return self.value
 
     def get_value(self):
-        time.sleep(7)  # Simulate a delay
-        tracer = trace.get_tracer(__name__)
-        with tracer.start_as_current_span(f"ray-get-operation"):
-            print(f"Counter incremented: {self.value}")
+        print(f"Counter incremented: {self.value}")
         return self.value
-
 
 def main(id, action):
     # Initialize Ray
@@ -32,10 +24,19 @@ def main(id, action):
 
     # Create the actor
     counter = Counter.remote()
+    tracer = trace.get_tracer(__name__)
     if action == "increment":
-        result = ray.get(counter.increment.remote())
+        with tracer.start_as_current_span(
+            "ray-increment-operation",
+            attributes={"gypsum.key1": "parent1"} # Add submission ID here
+        ):
+            result = ray.get(counter.increment.remote())
     elif action == "value":
-        result = ray.get(counter.get_value.remote())
+        with tracer.start_as_current_span(
+            "ray-getvalue-operation",
+            attributes={"gypsum.key1": "parent1"} # Add submision ID here
+        ):
+            result = ray.get(counter.get_value.remote())
 
     # Shutdown Ray
     ray.shutdown()
